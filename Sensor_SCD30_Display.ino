@@ -50,13 +50,14 @@ using namespace fs;
 
 //Adjustments
 #define DNS_INTERVAL 30
-#define SENSOR_WARMMING 10
+#define SENSOR_WARMING 10
 #define WIFI_CONNECT_TIMEOUT 20
 #define MQTT_CONNECT_RETRIES 3
 #define MQTT_PUBLISH_INTERVAL 5
 #define BATTERY_SMOOTH 0.125
 #define BATTERY_ALL 1
 #define BATTERY_ADJ_LIMIT 0.2
+#define SENSOR_WARMUP_DELAY 2000
 
 
 
@@ -78,7 +79,7 @@ struct SystemState {
   bool portalDns = false;
   bool initialized = false;
   float rollingBatteryVoltage = 0.0;
-  int warmupReadings = SENSOR_WARMMING;
+  int warmupReadings = SENSOR_WARMING;
   int publishState = 0;
   int displayState = 0;
   char errorBuffer[128];
@@ -206,7 +207,7 @@ bool saveDeviceConfig() {
 // Try to connect to WiFi with saved credentials
 bool tryConnectWiFi() {
   if (!loadCredentials()) {
-    Serial.print("no credentials found");
+    Serial.print("no WiFi credentials found");
     return false;
   }
 
@@ -409,7 +410,7 @@ void startCaptivePortal() {
       html += "<script>setTimeout(function(){ window.location.href='/'; }, 3000);</script>";
       html += "</body></html>";
       saveDeviceConfig();
-      delay(2000);
+      delay(SENSOR_WARMUP_DELAY);
       ESP.restart();
     } else {
       request->send(400, "text/html", "<html><body><h2>Error: Please enter SSID</h2></body></html>");
@@ -643,7 +644,7 @@ void setup() {
   // Initialize battery monitoring
   WiFi.setTxPower(WIFI_POWER_MINUS_1dBm);
   int rawBattery = analogRead(PIN_BATTERY);
-  sysState.rollingBatteryVoltage = ((float)rawBattery / 4095.0) * 2.0 * 3.3 * (1100 / 1000.0);
+  sysState.rollingBatteryVoltage = ((float)rawBattery / MAX_ADC) * BATTERY_VOLTAGE_DIVIDER * REF_VOLTAGE * BATTERY_CALIBRATION_FACTOR;
 
   sysState.initialized = true;
   Serial.println("=== System Initialized Successfully ===");
@@ -655,11 +656,6 @@ void setup() {
 // #####################################################################
 
 void loop() {
-  // Handle captive portal mode
-  if (sysState.portalMode) {
-    delay(100);
-    return;
-  }
   // Only proceed if system is initialized
   if (!sysState.initialized) {
     delay(1000);
